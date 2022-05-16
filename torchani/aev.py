@@ -7,7 +7,9 @@ import sys
 import warnings
 import importlib_metadata
 
-has_cuaev = 'torchani.cuaev' in importlib_metadata.metadata(__package__).get_all('Provides')
+# has_cuaev = 'torchani.cuaev' in importlib_metadata.metadata(__package__).get_all('Provides')
+# override
+has_cuaev = False
 
 if has_cuaev:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
@@ -207,9 +209,16 @@ def neighbor_pairs_nopbc(padding_mask: Tensor, coordinates: Tensor, cutoff: floa
     distances = (pair_coordinates[:, 0, ...] - pair_coordinates[:, 1, ...]).norm(2, -1)
     in_cutoff = (distances <= cutoff).nonzero()
     molecule_index, pair_index = in_cutoff.unbind(1)
+    m = molecule_index.clone()
     molecule_index *= num_atoms
     atom_index12 = p12_all[:, pair_index] + molecule_index
-    return atom_index12
+    return atom_index12, m
+
+def trim_neighbor_pairs(atom_index12, index_diff, m, num_atoms):
+    i = index_diff.reshape(1, -1).squeeze(0)
+    d = m * num_atoms + i[m]
+    atom_index12 = atom_index12.T[((atom_index12.T[:, 0] < d) * (atom_index12.T[:, 1] >= d))].T
+    return atom_index12.contiguous()
 
 
 def triu_index(num_species: int) -> Tensor:
@@ -267,7 +276,7 @@ def triple_by_molecule(atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
     return central_atom_index, local_index12 % n, sign12
 
 
-def compute_aev(species: Tensor, coordinates: Tensor, triu_index: Tensor,
+def compute_aev(species: Tensor, coordinates: Tensor, index_diff: Tensor, triu_index: Tensor,
                 constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor, Tensor],
                 sizes: Tuple[int, int, int, int, int], cell_shifts: Optional[Tuple[Tensor, Tensor]]) -> Tensor:
     Rcr, EtaR, ShfR, Rca, ShfZ, EtaA, Zeta, ShfA = constants
@@ -280,12 +289,14 @@ def compute_aev(species: Tensor, coordinates: Tensor, triu_index: Tensor,
 
     # PBC calculation is bypassed if there are no shifts
     if cell_shifts is None:
-        atom_index12 = neighbor_pairs_nopbc(species == -1, coordinates_, Rcr)
+        atom_index12, m = neighbor_pairs_nopbc(species == -1, coordinates_, Rcr)
+        atom_index12 = trim_neighbor_pairs(atom_index12, index_diff, m, num_atoms)
         selected_coordinates = coordinates.index_select(0, atom_index12.view(-1)).view(2, -1, 3)
         vec = selected_coordinates[0] - selected_coordinates[1]
     else:
         cell, shifts = cell_shifts
         atom_index12, shifts = neighbor_pairs(species == -1, coordinates_, cell, shifts, Rcr)
+        atom_index12 = trim_neighbor_pairs(atom_index12, index_diff)
         shift_values = shifts.to(cell.dtype) @ cell
         selected_coordinates = coordinates.index_select(0, atom_index12.view(-1)).view(2, -1, 3)
         vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
@@ -470,7 +481,7 @@ class AEVComputer(torch.nn.Module):
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
 
-    def forward(self, input_: Tuple[Tensor, Tensor],
+    def forward(self, input_: Tuple[Tensor, Tensor], index_diff: Tensor,
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesAEV:
         """Compute AEVs
@@ -516,20 +527,16 @@ class AEVComputer(torch.nn.Module):
         assert species.shape == coordinates.shape[:-1]
         assert coordinates.shape[-1] == 3
 
-        if self.use_cuda_extension:
-            assert (cell is None and pbc is None), "cuaev currently does not support PBC"
-            # if use_cuda_extension is enabled after initialization
-            if not self.cuaev_enabled:
-                self.init_cuaev_computer()
-            aev = self.compute_cuaev(species, coordinates)
-            return SpeciesAEV(species, aev)
-
         if cell is None and pbc is None:
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, None)
+            aev = compute_aev(species, coordinates, index_diff, self.triu_index, self.constants(), self.sizes, None)
         else:
             assert (cell is not None and pbc is not None)
             cutoff = max(self.Rcr, self.Rca)
             shifts = compute_shifts(cell, pbc, cutoff)
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, (cell, shifts))
+            aev = compute_aev(species, coordinates, index_diff, self.triu_index, self.constants(), self.sizes, (cell, shifts))
 
+        # Reduce to the first molecule
+        indices = torch.arange(species.shape[1]) < index_diff
+        species = indices * (species + 1) - 1
+        aev = indices.unsqueeze(-1) * aev
         return SpeciesAEV(species, aev)

@@ -51,7 +51,7 @@ class ANIModel(torch.nn.ModuleDict):
     def __init__(self, modules):
         super().__init__(self.ensureOrderedDict(modules))
 
-    def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
+    def forward(self, species_aev: Tuple[Tensor, Tensor], index_diff: int, # type: ignore
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         species, aev = species_aev
@@ -104,11 +104,11 @@ class Sequential(torch.nn.ModuleList):
     def __init__(self, *modules):
         super().__init__(modules)
 
-    def forward(self, input_: Tuple[Tensor, Tensor],  # type: ignore
+    def forward(self, input_: Tuple[Tensor, Tensor], index_diff: Optional[Tensor], # type: ignore
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None):
         for module in self:
-            input_ = module(input_, cell=cell, pbc=pbc)
+            input_ = module(input_, index_diff=index_diff, cell=cell, pbc=pbc)
         return input_
 
 

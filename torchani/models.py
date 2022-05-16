@@ -80,7 +80,7 @@ class BuiltinModel(torch.nn.Module):
         return cls(species_converter, aev_computer, neural_networks,
                    energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
 
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor], index_diff: int,
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         """Calculates predicted properties for minibatch of configurations
@@ -103,7 +103,8 @@ class BuiltinModel(torch.nn.Module):
         if species_coordinates[0].ge(self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
 
-        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        species_aevs = self.aev_computer(species_coordinates, index_diff=index_diff,
+                                        cell=cell, pbc=pbc)
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
 
