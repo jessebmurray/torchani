@@ -118,7 +118,7 @@ def get_fnames(datapath):
 def load_data(dataset):
     elements = dataset_elements[dataset]
     species_converter = SpeciesConverter(elements)
-    datapath = f"./{dataset}/geometries/"
+    datapath = f"../{dataset}/geometries/"
     data_fnames = get_fnames(datapath)
     data = []
     for i, fname in enumerate(data_fnames):
@@ -177,8 +177,9 @@ def pad_collate(
     pad_coordinates = torch.nn.utils.rnn.pad_sequence(
         coordinates, batch_first=True, padding_value=coords_pad_value
     )
+    labels = torch.tensor(np.array(labels)).reshape(1, -1).squeeze(0)
 
-    return np.array(ids), torch.tensor(labels), (pad_species, pad_coordinates), torch.tensor(index_diff)
+    return np.array(ids), labels, (pad_species, pad_coordinates), torch.tensor(index_diff)
 
 
 class Data(torch.utils.data.Dataset):

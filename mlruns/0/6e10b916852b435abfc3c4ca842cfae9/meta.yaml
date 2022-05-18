@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/jessemurray/Desktop/Main/Rotation1/Code/torchani/mlruns/0/6e10b916852b435abfc3c4ca842cfae9/artifacts
+end_time: 1652879668892
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+name: ''
+run_id: 6e10b916852b435abfc3c4ca842cfae9
+run_uuid: 6e10b916852b435abfc3c4ca842cfae9
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1652879664972
+status: 4
+tags: []
+user_id: jessemurray
