@@ -1,6 +1,5 @@
-import argparse as ap
-
 import numpy as np
+import argparse as ap
 
 
 def trainparser(default="BP"):
@@ -102,7 +101,7 @@ def trainparser(default="BP"):
 
     parser.add_argument("-b", "--batchsize", type=int, default=64, help="Batch size")
     parser.add_argument("-e", "--epochs", type=int, default=100, help="Epochs")
-    parser.add_argument("-lr", type=float, default=0.0005, help="Leanring rate")
+    parser.add_argument("-lr", type=float, default=0.0005, help="Learning rate")
     parser.add_argument(
         "-l", "--layers", type=int, nargs="+", default=None, help="Atomic NN layers"
     )
@@ -122,7 +121,7 @@ def trainparser(default="BP"):
         "-cm", "--chemap", type=str, default=None, help="Chemical elements mapping"
     )
 
-    parser.add_argument("-o", "--outpath", type=str, default="", help="Output path")
+    parser.add_argument("-o", "--outpath", type=str, default="out", help="Output path")
 
     parser.add_argument("--plot", action="store_true", help="Enable plotting")
     parser.add_argument("--baseline", type=str, help="Vina baseline")

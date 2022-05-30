@@ -527,6 +527,15 @@ class AEVComputer(torch.nn.Module):
         assert species.shape == coordinates.shape[:-1]
         assert coordinates.shape[-1] == 3
 
+
+        # if self.use_cuda_extension:
+        #     assert (cell is None and pbc is None), "cuaev currently does not support PBC"
+        #     # if use_cuda_extension is enabled after initialization
+        #     if not self.cuaev_enabled:
+        #         self.init_cuaev_computer()
+        #     aev = self.compute_cuaev(species, coordinates)
+        #     return SpeciesAEV(species, aev)
+
         if cell is None and pbc is None:
             aev = compute_aev(species, coordinates, index_diff, self.triu_index, self.constants(), self.sizes, None)
         else:

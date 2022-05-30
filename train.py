@@ -192,7 +192,7 @@ if __name__ == "__main__":
 
     import argparsers, models, plot #, predict
 
-    args = argparsers.trainparser(default="BP")
+    args = argparsers.trainparser(default="ANI")
 
     if args.device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -250,10 +250,9 @@ if __name__ == "__main__":
         #         )
 
 
-        dataset = 'NCIA_HB375x10'
-        elements = nci.dataset_elements[dataset]
-        n_species = len(elements)
-        data = nci.load_data(dataset)
+        df = nci.load_dfs(list(nci.dataset_elements.keys()))
+        n_species = len(nci.unique_elements)
+        data = df.to_dict(orient='records')
         random_state = 0
         train_size = 0.8
         training, validation = train_test_split(data, train_size=train_size,

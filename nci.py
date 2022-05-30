@@ -1,15 +1,32 @@
 import torch
 import math
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import qcelemental as qcel
 from os import listdir
 from torchani.nn import SpeciesConverter
 from torch.utils.data import DataLoader
-import torchani
 from typing import Collection, Dict, List, Optional, Tuple, Union
 
 
-dataset_elements = {'NCIA_HB375x10': ['H', 'C', 'N', 'O']}
+dataset_elements = {'NCIA_HB375x10': ['H', 'C', 'N', 'O'],
+    'NCIA_IHB100x10': ['H', 'C', 'N', 'O'],
+    'NCIA_HB300SPXx10': ['H', 'C', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'],
+    'NCIA_R739x5': ['H', 'He', 'B', 'C', 'N', 'O', 'F', 'Ne',
+                    'P', 'S', 'Cl', 'Ar', 'Br', 'Kr', 'I', 'Xe'],
+    'NCIA_SH250x10': ['H', 'C', 'N', 'O', 'F',
+                    'P', 'S', 'Cl', 'As', 'Se', 'Br', 'I'],
+    'NCIA_D442x10': ['H', 'He', 'B', 'C', 'N', 'O', 'F', 'Ne',
+                    'P', 'S', 'Cl', 'Ar', 'Se', 'Br', 'Kr', 'I', 'Xe'],
+    'NCIA_D1200': ['H', 'He', 'B', 'C', 'N', 'O', 'F', 'Ne',
+                    'P', 'S', 'Cl', 'Ar', 'Se', 'Br', 'Kr', 'I', 'Xe']}
+
+unique_elements = []
+for l in dataset_elements.values():
+    unique_elements += l
+
+unique_elements = list(set(unique_elements))
 
 to_Z = np.vectorize(qcel.periodictable.to_Z)
 
@@ -19,21 +36,23 @@ def header_to_dict(header):
     d = {}
     for field in fields:
         key, value = field.split("=")
-
-        try:
-            value = float(value)
-        except ValueError:
-
+        if key == 'selection_a':
             try:
-                start, stop = value.split("-")
+                value = int(value)
+            except ValueError:
+
+                # try:
+                _, stop = value.split("-")
 
                 # Create slice
                 # Shift to 0-based indexing
                 # Stop is not included
-                value = slice(int(start) - 1, int(stop))
+                value = stop
 
-            except ValueError:
-                pass
+                # except ValueError:
+                #     pass
+        elif key == 'benchmark_Eint':
+            value = float(value)
 
         d[key] = value
 
@@ -91,10 +110,12 @@ def get_entry(fpath, species_converter):
     coords = torch.from_numpy(coords).float() #.unsqueeze(0).float()
     species, coordinates = species_converter((anums, coords))
     energies = np.array([info['benchmark_Eint']])
-    index_diff = np.array([info['selection_a'].stop], dtype='int')
+    index_diff = torch.from_numpy(np.array([info['selection_a']], dtype='int'))
+    scaling = float(info['scaling'])
 
     entry = {'species': species, 'coordinates': coordinates,
-            'index_diff': index_diff, 'energies': energies}
+            'index_diff': index_diff, 'energies': energies,
+            'scaling': scaling, 'reverse': False}
     return entry
 
 def get_reverse_entry(entry):
@@ -103,13 +124,15 @@ def get_reverse_entry(entry):
     coordinates = entry['coordinates']
     index_diff = entry['index_diff']
     energies = entry['energies']
+    scaling = entry['scaling']
 
     r_species = species.flip(0)
     r_coordinates = coordinates.flip(0)
     r_index_diff = len(species) - index_diff
 
     r_entry = {'species': r_species, 'coordinates': r_coordinates,
-        'index_diff': r_index_diff, 'energies': energies}
+        'index_diff': r_index_diff, 'energies': energies, 'reverse': True,
+        'scaling': scaling}
     return r_entry
 
 def get_fnames(datapath):
@@ -118,10 +141,12 @@ def get_fnames(datapath):
 def load_data(dataset):
     elements = dataset_elements[dataset]
     species_converter = SpeciesConverter(elements)
-    datapath = f"../{dataset}/geometries/"
+
+    datapath = f"../NCIAtlas/geometries/{dataset}/"
     data_fnames = get_fnames(datapath)
     data = []
     for i, fname in enumerate(data_fnames):
+
         fpath = datapath + fname
 
         entry = get_entry(fpath, species_converter)
@@ -133,8 +158,6 @@ def load_data(dataset):
         data.append(reverse_entry)
 
     return data
-
-
 
 def pad_collate(
     batch,
@@ -178,8 +201,9 @@ def pad_collate(
         coordinates, batch_first=True, padding_value=coords_pad_value
     )
     labels = torch.tensor(np.array(labels)).reshape(1, -1).squeeze(0)
+    index_diff = torch.tensor(index_diff).unsqueeze(1)
 
-    return np.array(ids), labels, (pad_species, pad_coordinates), torch.tensor(index_diff)
+    return np.array(ids), labels, (pad_species, pad_coordinates), index_diff
 
 
 class Data(torch.utils.data.Dataset):
@@ -229,14 +253,24 @@ class Data(torch.utils.data.Dataset):
 
         self.n = len(data)
         for entry in data:
-            self.ids.append(entry['id'])
+            self.ids.append((entry['dataset'], entry['id']))
             self.species.append(entry['species'])
             self.coordinates.append(entry['coordinates'])
             self.labels.append(entry['energies'])
             self.index_diff.append(entry['index_diff'])
 
 
+def get_data_loader(dataset, batch_size=40, shuffle=True):
+    out = Data()
+    out.load(dataset)
+    return DataLoader(out, batch_size=batch_size, shuffle=shuffle, collate_fn=pad_collate)
+
+
 def get_data_loaders(training, validation, batch_size=40):
+    trainloader = get_data_loader(training, batch_size=batch_size)
+    validloader = get_data_loader(validation, batch_size=batch_size)
+    return trainloader, validloader
+
     traindata = Data()
     validdata = Data()
 
@@ -246,4 +280,138 @@ def get_data_loaders(training, validation, batch_size=40):
     trainloader = DataLoader(traindata, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
     validloader = DataLoader(validdata, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
 
-    return trainloader, validloader
+def get_predictions(loader, model, AEVC, device=None, return_info=False):
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Move model to device
+    model.to(device)
+
+    # Model in evaluation mode
+    model.eval()
+
+    true = []
+    predictions = []
+    identifiers = []
+
+    if return_info:
+        species_all = []
+        coordinates_all = []
+        index_diff_all = []
+        aevs_all = []
+        species_aevs_all = []
+
+    for ids, labels, species_coordinates_ligmasks, index_diff in loader:
+
+        # Move data to device
+        labels = labels.to(device).float()
+        species = species_coordinates_ligmasks[0].to(device)
+        coordinates = species_coordinates_ligmasks[1].to(device).float()
+        index_diff = index_diff.to(device)
+
+        if len(species_coordinates_ligmasks) == 2:
+            ligmasks = None
+        else:
+            ligmasks = species_coordinates_ligmasks[2].to(device)
+
+        # return species, coordinates, index_diff
+
+        species_aevs, aevs = AEVC.forward((species, coordinates), index_diff)
+
+        output = model(species, aevs, ligmasks)
+        output = output.cpu().detach().numpy()
+        labels = labels.cpu().numpy()
+
+        # Store true and predicted values
+        predictions += output.tolist()
+        true += labels.tolist()
+        identifiers += ids.tolist()
+
+        if return_info:
+            species_all.append(species)
+            coordinates_all.append(coordinates)
+            index_diff_all.append(index_diff)
+            aevs_all.append(aevs)
+            species_aevs_all.append(species_aevs)
+
+    identifiers = np.array(identifiers)
+    true = np.array(true)
+    predictions = np.array(predictions)
+
+    if return_info:
+        return identifiers, true, predictions, species_all, coordinates_all, index_diff_all, aevs_all, species_aevs_all
+
+    return identifiers, true, predictions
+
+
+def analyze_pairs(pair1, pair2, alpha=0.2):
+    print(np.corrcoef(pair1, pair2)[0, 1])
+    plt.scatter(pair1, pair2, alpha=alpha, facecolors='none', edgecolors='C0')
+    plt.show()
+    plt.hist(pair1 - pair2, bins=50);
+    plt.show()
+
+
+def get_system_names(dataset):
+    with open(f"../NCIAtlas/tables/{dataset}/{dataset}_system_names.txt") as f:
+        lines = f.readlines()
+    lines = lines[1:]
+    for i, line in enumerate(lines):
+        lines[i] = line[line.find('\t')+1:].rstrip('\n').split(' ... ')
+    system_names = []
+    for entry in lines:
+        system_names.append(entry)
+        system_names.append(entry[::-1])
+    return system_names
+
+def get_metadata(dataset):
+    with open(f"../NCIAtlas/tables/{dataset}/{dataset}_metadata.txt") as f:
+        lines = f.readlines()
+    metadata = []
+    for line in lines:
+        try:
+            int(line[0])
+        except:
+            continue
+        # lines[i] = line[line.find('\t')+1:].rstrip('\n').split(' ... ')
+        entry = line.split('\t')
+        if dataset == 'NCIA_HB375x10':
+            interaction_type = 'HB'
+            interaction = entry[1]
+            if interaction == 'noHB':
+                interaction_type = 'VDW'
+                interaction = float('NaN')
+        elif dataset == 'NCIA_IHB100x10':
+            interaction_type = 'IHB'
+            interaction = entry[1]
+        elif dataset == 'NCIA_HB300SPXx10':
+            interaction_type = 'HB'
+            interaction = entry[2].split(',')[0].lstrip('"')
+        else:
+            interaction_type = 'VDW'
+            interaction = float('NaN')
+        metadata.append({'interaction_type': interaction_type, 'interaction': interaction})
+        metadata.append({'interaction_type': interaction_type, 'interaction': interaction})
+    return metadata
+
+def load_df(dataset):
+    data = load_data(dataset)
+    dfd = pd.DataFrame(data)
+
+    system_names = get_system_names(dataset)
+    dfs = pd.DataFrame(system_names, columns=['MoleculeA', 'MoleculeB'])
+    metadata = get_metadata(dataset)
+    dfm = pd.DataFrame(metadata)
+    df = dfs.join(dfm).join(dfd)
+    df['dataset'] = np.repeat([dataset], df.shape[0])
+    return df
+
+def load_dfs(datasets: list):
+    dfs = []
+    for dataset in datasets:
+        df = load_df(dataset)
+        dfs.append(df)
+    df = pd.concat(dfs)
+    df = df.reset_index(drop=True)
+    return df
