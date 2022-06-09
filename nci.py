@@ -8,6 +8,7 @@ from os import listdir
 from torchani.nn import SpeciesConverter
 from torch.utils.data import DataLoader
 from typing import Collection, Dict, List, Optional, Tuple, Union
+from collections import Counter
 
 
 dataset_elements = {'NCIA_HB375x10': ['H', 'C', 'N', 'O'],
@@ -21,6 +22,8 @@ dataset_elements = {'NCIA_HB375x10': ['H', 'C', 'N', 'O'],
                     'P', 'S', 'Cl', 'Ar', 'Se', 'Br', 'Kr', 'I', 'Xe'],
     'NCIA_D1200': ['H', 'He', 'B', 'C', 'N', 'O', 'F', 'Ne',
                     'P', 'S', 'Cl', 'Ar', 'Se', 'Br', 'Kr', 'I', 'Xe']}
+
+ncia_elements = set(sum(list(dataset_elements.values()), []))
 
 unique_elements = []
 for l in dataset_elements.values():
@@ -69,7 +72,10 @@ def read_xyz(fname):
     # Convert elements to atomic numbers
     anums = to_Z(elements)
 
-    return anums, coordinates, header_to_dict(header)
+    info = header_to_dict(header)
+    info['element_counts'] = dict(Counter(elements))
+
+    return anums, coordinates, info
 
 def get_constants(radial_cutoff: float, angular_cutoff: float,
                     radial_eta: float, angular_eta: float,
@@ -116,6 +122,8 @@ def get_entry(fpath, species_converter):
     entry = {'species': species, 'coordinates': coordinates,
             'index_diff': index_diff, 'energies': energies,
             'scaling': scaling, 'reverse': False}
+    for element in ncia_elements:
+        entry[element] = info['element_counts'].get(element, 0)
     return entry
 
 def get_reverse_entry(entry):
@@ -133,6 +141,8 @@ def get_reverse_entry(entry):
     r_entry = {'species': r_species, 'coordinates': r_coordinates,
         'index_diff': r_index_diff, 'energies': energies, 'reverse': True,
         'scaling': scaling}
+    for element in ncia_elements:
+        r_entry[element] = entry[element]
     return r_entry
 
 def get_fnames(datapath):
@@ -271,14 +281,6 @@ def get_data_loaders(training, validation, batch_size=40):
     validloader = get_data_loader(validation, batch_size=batch_size)
     return trainloader, validloader
 
-    traindata = Data()
-    validdata = Data()
-
-    traindata.load(training)
-    validdata.load(validation)
-
-    trainloader = DataLoader(traindata, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
-    validloader = DataLoader(validdata, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
 
 def get_predictions(loader, model, AEVC, device=None, return_info=False):
 
@@ -415,3 +417,17 @@ def load_dfs(datasets: list):
     df = pd.concat(dfs)
     df = df.reset_index(drop=True)
     return df
+
+def exclude_elements(df):
+    noble_gasses = ['He', 'Ne', 'Ar', 'Kr', 'Xe']
+    exclude = noble_gasses + ['As']
+    df = df.loc[df[exclude].sum(axis=1) == 0]
+    df = df.drop(columns=exclude)
+    return df
+
+
+def exclude_molecule(df, molecule):
+    return df.loc[(df.MoleculeA != molecule) & (df.MoleculeB != molecule)]
+
+def include_molecule(df, molecule):
+    return df.loc[(df.MoleculeA == molecule) | (df.MoleculeB == molecule)]
