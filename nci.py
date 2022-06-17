@@ -157,7 +157,7 @@ def load_data(dataset):
     elements = dataset_elements[dataset]
     species_converter = SpeciesConverter(elements)
 
-    datapath = f"../NCIAtlas/geometries/{dataset}/"
+    datapath = f"./NCIAtlas/geometries/{dataset}/"
     data_fnames = get_fnames(datapath)
     data = []
     for i, fname in enumerate(data_fnames):
@@ -369,7 +369,7 @@ def analyze_pairs(pair1, pair2, alpha=0.2, xlabel='True', ylabel='Prediction'):
 
 
 def get_system_names(dataset):
-    with open(f"../NCIAtlas/tables/{dataset}/{dataset}_system_names.txt") as f:
+    with open(f"./NCIAtlas/tables/{dataset}/{dataset}_system_names.txt") as f:
         lines = f.readlines()
     lines = lines[1:]
     for i, line in enumerate(lines):
@@ -381,7 +381,7 @@ def get_system_names(dataset):
     return system_names
 
 def get_metadata(dataset):
-    with open(f"../NCIAtlas/tables/{dataset}/{dataset}_metadata.txt") as f:
+    with open(f"./NCIAtlas/tables/{dataset}/{dataset}_metadata.txt") as f:
         lines = f.readlines()
     metadata = []
     for line in lines:
