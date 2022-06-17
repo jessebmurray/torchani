@@ -21,6 +21,9 @@ def trainparser(default="BP"):
     elif default.strip().upper() == "MIX":
         TsA_default = [0.0, np.pi]
         RsA_default = [0.90, 1.55, 2.2, 2.85]
+    elif default.strip().upper() == "JM":
+        TsA_default = ([0.1, 0.4, 0.7, 1, 1.3],)
+        RsA_default = [2, 4, 6]
     else:
         raise NameError(f"{default}: default not implemented.")
 
@@ -48,36 +51,42 @@ def trainparser(default="BP"):
     # )
 
     # Radial
-    parser.add_argument("-RcR", type=float, default=5.2, help="Radial cutoff")
-    parser.add_argument("-EtaR", type=float, default=16.0, help="Radial decay")
-    parser.add_argument(
-        "-RsR",
-        nargs="+",
-        type=float,
-        default=[
-            0.90,
-            1.17,
-            1.44,
-            1.71,
-            1.98,
-            2.24,
-            2.51,
-            2.78,
-            3.05,
-            3.32,
-            3.59,
-            3.86,
-            4.13,
-            4.39,
-            4.66,
-            4.93,
-        ],
-        help="Radial shift",
-    )
+    # parser.add_argument("-RcR", type=float, default=5.2, help="Radial cutoff")
+    parser.add_argument("-RcR", type=float, default=8, help="Radial cutoff")
+    # parser.add_argument("-EtaR", type=float, default=16.0, help="Radial decay")
+    parser.add_argument("-EtaR", nargs="+", type=float,
+                default=[0.8, 2.5], help="Radial decay")
+
+    # parser.add_argument(
+    #     "-RsR",
+    #     nargs="+",
+    #     type=float,
+    #     default=[
+    #         0.90,
+    #         1.17,
+    #         1.44,
+    #         1.71,
+    #         1.98,
+    #         2.24,
+    #         2.51,
+    #         2.78,
+    #         3.05,
+    #         3.32,
+    #         3.59,
+    #         3.86,
+    #         4.13,
+    #         4.39,
+    #         4.66,
+    #         4.93,
+    #     ],
+    #     help="Radial shift",
+    # )
+    parser.add_argument("-RsR", nargs="+", type=float,
+            default=[1, 2, 3, 4.5, 6], help="Radial shift")
 
     # Angular
-    parser.add_argument("-RcA", type=float, default=5.2, help="Angular cutoff")
-    parser.add_argument("-EtaA", type=float, default=3.5, help="Angular decay")
+    parser.add_argument("-RcA", type=float, default=7, help="Angular cutoff")
+    parser.add_argument("-EtaA", type=float, default=2, help="Angular decay")
     parser.add_argument(
         "-RsA",
         nargs="+",
@@ -94,8 +103,9 @@ def trainparser(default="BP"):
     )
     parser.add_argument(
         "-Zeta",
+        nargs="+",
         type=float,
-        default=32.0,
+        default=[64, 200],
         help="Angular multiplicity",
     )
 
@@ -106,7 +116,7 @@ def trainparser(default="BP"):
         "-l", "--layers", type=int, nargs="+", default=None, help="Atomic NN layers"
     )
     parser.add_argument(
-        "-p", "--dropout", type=float, default=None, help="Dropout probability"
+        "-p", "--dropout", type=float, default=0.5, help="Dropout probability"
     )
 
     parser.add_argument(
@@ -131,7 +141,7 @@ def trainparser(default="BP"):
 
     parser.add_argument("--scale", action="store_true", help="Scale labels")
 
-    parser.add_argument("--removeHs", action="store_true", help="Remove hydrogen atoms")
+    # parser.add_argument("--removeHs", action="store_true", help="Remove hydrogen atoms")
 
     parser.add_argument(
         "-vs",

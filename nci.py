@@ -23,7 +23,12 @@ dataset_elements = {'NCIA_HB375x10': ['H', 'C', 'N', 'O'],
     'NCIA_D1200': ['H', 'He', 'B', 'C', 'N', 'O', 'F', 'Ne',
                     'P', 'S', 'Cl', 'Ar', 'Se', 'Br', 'Kr', 'I', 'Xe']}
 
-ncia_elements = set(sum(list(dataset_elements.values()), []))
+dataset_exclude = {'NCIA_HB375x10': ['furan', 'acetaldehyde', 'acetonitrile'],
+                    'NCIA_HB300SPXx10': ['chloric acid', 'methyliodide', 'sulfur dioxide', 'phosphorine']}
+
+ncia_elements = list(set(sum(list(dataset_elements.values()), [])))
+NOBLE_GASSES = ['He', 'Ne', 'Ar', 'Kr', 'Xe']
+EXCLUDE = NOBLE_GASSES + ['As']
 
 unique_elements = []
 for l in dataset_elements.values():
@@ -347,9 +352,17 @@ def get_predictions(loader, model, AEVC, device=None, return_info=False):
     return identifiers, true, predictions
 
 
-def analyze_pairs(pair1, pair2, alpha=0.2):
+import seaborn as sns
+
+def analyze_pairs(pair1, pair2, alpha=0.2, xlabel='True', ylabel='Prediction'):
     print(np.corrcoef(pair1, pair2)[0, 1])
     plt.scatter(pair1, pair2, alpha=alpha, facecolors='none', edgecolors='C0')
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.show()
+    sns.jointplot(x=pair1, y=pair2, kind='hex')
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
     plt.show()
     plt.hist(pair1 - pair2, bins=50);
     plt.show()
@@ -383,7 +396,7 @@ def get_metadata(dataset):
             interaction = entry[1]
             if interaction == 'noHB':
                 interaction_type = 'VDW'
-                interaction = float('NaN')
+                interaction = 'VDW'
         elif dataset == 'NCIA_IHB100x10':
             interaction_type = 'IHB'
             interaction = entry[1]
@@ -409,25 +422,48 @@ def load_df(dataset):
     df['dataset'] = np.repeat([dataset], df.shape[0])
     return df
 
-def load_dfs(datasets: list):
-    dfs = []
-    for dataset in datasets:
+def load_dfs(datasets: list, exclude=True):
+    if len(datasets) == 1:
+        dataset = datasets[0]
         df = load_df(dataset)
-        dfs.append(df)
-    df = pd.concat(dfs)
-    df = df.reset_index(drop=True)
+    else:
+        dfs = []
+        for dataset in datasets:
+            df = load_df(dataset)
+            dfs.append(df)
+        df = pd.concat(dfs)
+        df = df.reset_index(drop=True)
+    if exclude:
+        df = exclude_elements(df)
+        elements = list(set(ncia_elements) - set(EXCLUDE))
+    else:
+        elements = ncia_elements
+    df_sum = df[elements].sum()
+    missing_elements = df_sum.loc[df_sum == 0].index.tolist()
+    df = df.drop(columns=set(missing_elements))
     return df
 
 def exclude_elements(df):
-    noble_gasses = ['He', 'Ne', 'Ar', 'Kr', 'Xe']
-    exclude = noble_gasses + ['As']
-    df = df.loc[df[exclude].sum(axis=1) == 0]
-    df = df.drop(columns=exclude)
+    df = df.loc[df[EXCLUDE].sum(axis=1) == 0]
+    df = df.drop(columns=EXCLUDE)
     return df
 
+def split_by_molecules(df, molecules = ('furan', 'acetaldehyde', 'methylacetate', 'acetamide')):
+    df_train = df.loc[(~df.MoleculeA.isin(molecules)) & (~df.MoleculeB.isin(molecules))]
+    df_test = df.loc[(df.MoleculeA.isin(molecules)) | (df.MoleculeB.isin(molecules))]
+    return df_train, df_test
 
-def exclude_molecule(df, molecule):
-    return df.loc[(df.MoleculeA != molecule) & (df.MoleculeB != molecule)]
+def df_to_data(df):
+    return df[['id', 'dataset', 'species', 'coordinates', 'index_diff', 'energies']].to_dict(orient='records')
 
-def include_molecule(df, molecule):
-    return df.loc[(df.MoleculeA == molecule) | (df.MoleculeB == molecule)]
+def get_n_species(df):
+    elements = list(set(ncia_elements).intersection(set(df.columns)))
+    return df[elements].any(axis=0).sum()
+
+def load_hb_w_split():
+    molecules = dataset_exclude['NCIA_HB375x10'] # + dataset_exclude['NCIA_HB300SPXx10']
+    df = load_dfs(datasets=['NCIA_HB375x10'], exclude=True)
+    n_species = get_n_species(df)
+    df_train, df_test = split_by_molecules(df, molecules)
+    training, validation = df_to_data(df_train), df_to_data(df_test)
+    return training, validation, n_species
