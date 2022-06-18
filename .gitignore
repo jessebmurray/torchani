@@ -39,7 +39,7 @@ dist
 *.zip
 Untitled.ipynb
 /nnp_training.py
-/test*.py
+# /test*.py
 .coverage
 htmlcov/
 /include
